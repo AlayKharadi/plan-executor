@@ -1,0 +1,175 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "execution_plan_schema.json",
+  "title": "ExecutionPlan",
+  "description": "Schema for a deterministic execution plan produced by the planner agent and consumed by the executor.",
+  "type": "object",
+  "required": ["execution_id", "created_at", "source_instruction", "operations"],
+  "additionalProperties": false,
+
+  "properties": {
+
+    "execution_id": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9_-]{8,64}$",
+      "description": "Unique plan ID. Used for idempotency — re-running the same ID is always a no-op."
+    },
+
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 UTC timestamp of when this plan was generated."
+    },
+
+    "source_instruction": {
+      "type": "string",
+      "minLength": 5,
+      "description": "The original natural-language instruction that produced this plan. Stored verbatim for auditability."
+    },
+
+    "operations": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Ordered list of operations to apply sequentially. Each operation is independent.",
+      "items": { "$ref": "#/definitions/Operation" }
+    },
+
+    "summary_prompt": {
+      "type": "string",
+      "description": "Optional instruction for the executor to produce a human-readable summary after execution."
+    }
+
+  },
+
+  "definitions": {
+
+    "Operation": {
+      "type": "object",
+      "required": ["operation_id", "filter", "action"],
+      "additionalProperties": false,
+      "properties": {
+
+        "operation_id": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_-]{1,32}$",
+          "description": "Unique ID for this operation within the plan (e.g. op_01, op_02)."
+        },
+
+        "description": {
+          "type": "string",
+          "description": "Human-readable explanation of what this operation does. Required for audit trail."
+        },
+
+        "filter": { "$ref": "#/definitions/Filter" },
+        "action": { "$ref": "#/definitions/Action" },
+        "options": { "$ref": "#/definitions/Options" }
+
+      }
+    },
+
+    "Filter": {
+      "type": "object",
+      "description": "Selects which CSV rows this operation applies to. All specified conditions are ANDed. Omitting a field means match all rows for that dimension.",
+      "additionalProperties": false,
+      "properties": {
+
+        "categories": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 },
+          "description": "Match rows whose 'category' column is in this list. Omit to match all categories."
+        },
+
+        "in_stock": {
+          "type": ["boolean", "null"],
+          "description": "true = in-stock rows only, false = out-of-stock rows only, null or omitted = all rows."
+        },
+
+        "skus": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 },
+          "description": "Match only these exact SKU values. Takes precedence over other filter fields when specified."
+        },
+
+        "price_gte": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Match rows where price >= this value."
+        },
+
+        "price_lte": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Match rows where price <= this value. Must be >= price_gte if both are specified."
+        }
+
+      }
+    },
+
+    "Action": {
+      "type": "object",
+      "required": ["type", "value"],
+      "additionalProperties": false,
+      "description": "The transformation to apply to matched rows.",
+      "properties": {
+
+        "type": {
+          "type": "string",
+          "enum": [
+            "percent_increase",
+            "percent_decrease",
+            "fixed_increase",
+            "fixed_decrease",
+            "set_price",
+            "set_stock"
+          ],
+          "description": "The kind of transformation. percent_* uses value as a percentage (e.g. 10 = 10%). fixed_* adds/subtracts an absolute amount. set_price overrides price directly. set_stock sets the in_stock boolean."
+        },
+
+        "value": {
+          "description": "The operand for the action. Must be a number >= 0 for all price actions. Must be a boolean for set_stock.",
+          "oneOf": [
+            { "type": "number", "minimum": 0 },
+            { "type": "boolean" }
+          ]
+        }
+
+      },
+
+      "if":   { "properties": { "type": { "const": "set_stock" } } },
+      "then": { "properties": { "value": { "type": "boolean" } } },
+      "else": { "properties": { "value": { "type": "number", "minimum": 0 } } }
+    },
+
+    "Options": {
+      "type": "object",
+      "description": "Optional execution controls applied after the action calculation.",
+      "additionalProperties": false,
+      "properties": {
+
+        "round_to": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 6,
+          "default": 2,
+          "description": "Decimal places to round the resulting price to. Defaults to 2."
+        },
+
+        "min_price": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Price floor — resulting price will never go below this value."
+        },
+
+        "max_price": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Price ceiling — resulting price will never exceed this value."
+        }
+
+      }
+    }
+
+  }
+}

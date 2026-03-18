@@ -1,0 +1,8 @@
+sku,category,price,in_stock
+A101,fitness,29.99,true
+A102,fitness,39.99,true
+A103,fitness,49.99,false
+B201,yoga,19.99,false
+B202,yoga,24.99,true
+C301,accessories,9.99,true
+C302,accessories,14.99,true
